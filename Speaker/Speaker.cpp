@@ -1,4 +1,47 @@
 #include "stdafx.h"
+#include <VersionHelpers.h>
+
+// flag - 0/1/2 : toggle / on / off
+#include <mmdeviceapi.h>
+#include <Endpointvolume.h>
+const CLSID CLSID_MMDeviceEnumerator = __uuidof(MMDeviceEnumerator);
+const IID IID_IMMDeviceEnumerator = __uuidof(IMMDeviceEnumerator);
+const IID IID_IAudioEndpointVolume = __uuidof(IAudioEndpointVolume);
+void SetSpeakerWin8(int flag) {
+	HRESULT hr = S_OK;
+	IMMDeviceEnumerator *deviceEnumerator = NULL;
+	IMMDevice *defaultDevice = NULL;
+	IAudioEndpointVolume *endpointVolume = NULL;
+
+	::CoInitialize(NULL);
+	hr = CoCreateInstance(CLSID_MMDeviceEnumerator, NULL, CLSCTX_ALL, IID_IMMDeviceEnumerator, (void**)&deviceEnumerator);
+	if (SUCCEEDED(hr)) {
+		hr = deviceEnumerator->GetDefaultAudioEndpoint(eRender, eConsole, &defaultDevice);
+		if (SUCCEEDED(hr)) {
+			defaultDevice->Activate(IID_IAudioEndpointVolume, CLSCTX_INPROC_SERVER, NULL, (void**)&endpointVolume);
+			if (SUCCEEDED(hr)) {
+				BOOL bMute = FALSE;
+				switch (flag) {
+				case 1:
+					bMute = FALSE;
+					break;
+				case 2:
+					bMute = TRUE;
+					break;
+				case 0:
+				default:
+					endpointVolume->GetMute(&bMute);
+					bMute = !bMute;
+					break;
+				}
+				endpointVolume->SetMute(bMute, NULL);
+			}
+			defaultDevice->Release();
+		}
+		deviceEnumerator->Release();
+	}
+	::CoUninitialize();
+}
 
 // flag - 0/1/2 : toggle / on / off
 void SetSpeaker( int flag ) {
@@ -7,13 +50,13 @@ void SetSpeaker( int flag ) {
     if (num == 0) return;
 
     // 假定系统中只存在一个混音器，所以就不用 mixerOpen() 了
-    //HMIXER mix;
-    //MMRESULT mmr = ::mixerOpen(&mix, 0, 0L, 0L, 0L);
+    HMIXER mix;
+    MMRESULT mmr = ::mixerOpen(&mix, 0, 0L, 0L, 0L);
 
     // 遍历混音器的每个输出线，找到 Master Volume
     DWORD dwMasterLineID = 0L;
     MIXERCAPS caps;
-    MMRESULT mmr = ::mixerGetDevCaps(0, &caps, sizeof(MIXERCAPS));
+	mmr = ::mixerGetDevCaps((UINT_PTR)mix, &caps, sizeof(MIXERCAPS));
     for (DWORD d=0; d < caps.cDestinations; d++) {
         MIXERLINE mxl;
         mxl.cbStruct = sizeof(MIXERLINE);
@@ -81,7 +124,13 @@ int main(int argc, _TCHAR* argv[])
     } else if ( cmdLine.HasSwitch( "-off" ) ) {
         flag = 2;
     }
-    SetSpeaker( flag );
+
+	if (::IsWindowsVistaOrGreater()) {
+		SetSpeakerWin8(flag);
+	}
+	else {
+		SetSpeaker(flag);
+	}
     return 0;
 }
 
